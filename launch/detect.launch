@@ -1,0 +1,16 @@
+<launch>
+
+  <arg name="image_topic" default="/camera/image_raw" />
+  <arg name="goal_topic" default="goal" />
+  <arg name="goal_frame_id" default="goal"/> 
+  <arg name="display" default="true" />
+
+
+  <node pkg="goal_detection" type="goal_detection.py" name="goal_detection" output="screen">
+    <remap from="image_raw" to="$(arg image_topic)" />
+    <remap from="goal" to="$(arg goal_topic)" />
+    <param name="goal_frame_id" value="$(arg goal_frame_id)" />
+    <param name="display" value="$(arg display)" />
+  </node>
+  
+</launch>
