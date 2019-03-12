@@ -12,6 +12,7 @@ import sys
 import os
 import math
 import rospy
+import angles
 import tf
 from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
@@ -100,10 +101,9 @@ class GoalDetection:
 
         # Determine optical center
         if self.center_x == None or self.center_y == None:
-          self.center_x, self.center_y = Camera.detect_optical_center(self.image)
-          # Average of detection and calibration
-          self.center_x = int(round((self.center_x + Camera.center[0])/2))
-          self.center_y = int(round((self.center_y + Camera.center[1])/2))
+          Camera.detect_optical_center(self.image) # optional
+          self.center_x = int(round(Camera.center[0]))
+          self.center_y = int(round(Camera.center[1]))
         
         # Draw crosshair
         north = (self.center_x, height-1)
@@ -137,11 +137,7 @@ class GoalDetection:
           # Draw goal-line
           cv2.line(display_img, pylon1, pylon2, (0,255,0), 1)
                    
-          # Calculate the center of the goal in pixel coordinates
-          #goal_x = int((pylon1[0]+pylon2[0])/2.0)
-          #goal_y = int((pylon1[1]+pylon2[1])/2.0)
-          #goal = (goal_x, goal_y)
-                   
+          # Calculate the center of the goal in pixel coordinates                 
           goal = np.round(Utils.middle_between(pylon1, pylon2)).astype("int")
           goal_x = goal[0]
           goal_y = goal[1]
@@ -159,16 +155,13 @@ class GoalDetection:
           goal_x_cart, goal_y_cart = Utils.pol2cart(goal_real_rho, goal_real_phi)
           self.goal_x, self.goal_y = Camera.image2robot(goal_x_cart, goal_y_cart)
 
-        
-          # Calculate goal orientation (theta)
-                   
+          # Calculate goal orientation (theta)            
           goal_normal_relative = Utils.perpendicular((pylon1[0] - pylon2[0], pylon1[1] - pylon2[1]))
           goal_normal = (goal[0] + goal_normal_relative[0], goal[1] + goal_normal_relative[1])
           cv2.circle(display_img, goal_normal, 0, (0, 255, 0), 5)
           cv2.line(display_img, tuple(goal), tuple(goal_normal), (0,255,0), 1)
-
           x_axis = (0, -self.center_y)
-          self.goal_theta = Utils.angle_between(goal_normal_relative, x_axis)
+          self.goal_theta = Utils.angle_between(x_axis, goal_normal_relative)
           #print("goal_theta", self.goal_theta)
 
         # Publish transform from camera to goal
@@ -242,9 +235,9 @@ class Camera:
             if r > r_max:
               r_max = r
               center_x, center_y = x, y    
-        #cv2.circle(display_img, (self.center_x, self.center_y), r, (0, 255, 0), 1)
         
-        return center_x, center_y
+        Camera.center = np.array([center_x, center_y])
+        #return center_x, center_y
 
     @classmethod
     def pixels2meters(cls, rho):
@@ -277,7 +270,7 @@ class Utils:
         """
         rho = np.sqrt(x**2 + y**2)
         phi = np.arctan2(y, x)
-        return(rho, phi)
+        return (rho, phi)
         
     @staticmethod
     def pol2cart(rho, phi):
@@ -285,7 +278,7 @@ class Utils:
         """
         x = rho * np.cos(phi)
         y = rho * np.sin(phi)
-        return(x, y)
+        return (x, y)
 
     @staticmethod
     def perpendicular(v) :
@@ -309,7 +302,7 @@ class Utils:
         """
         v1 = np.array(v1)
         v2 = np.array(v2)
-        vm = (v1 + v2) / 2
+        vm = (v1 + v2) / 2.0
              
         return vm 
                
@@ -330,11 +323,14 @@ class Utils:
         #v2_u = Utils.normalize(v2)
         #return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
         
-        return np.arctan2(v2[1],v2[0]) - np.arctan2(v1[1],v1[0])
+        a1 = np.arctan2(v1[1],v1[0])
+        a2 = np.arctan2(v2[1],v2[0])
         
+        return angles.shortest_angular_distance(a2, a1)
+    
     @staticmethod
     def find_contours(image, mode=cv2.RETR_EXTERNAL):
-        """find contours in bw image
+        """find contours in image
         """
         (_, cnts, hierarchy) = cv2.findContours(image.copy(), mode, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -379,7 +375,7 @@ class Utils:
         
     @staticmethod
     def find_circles(image, minDist=1, param1=50, param2=30, minRadius=0, maxRadius=0):
-        """Find circles using HoughCircles
+        """Find circles in image
         """
 
         # detect circles in the image
@@ -391,11 +387,10 @@ class Utils:
                                    maxRadius=maxRadius)
         # convert the (x, y) coordinates and radius of the circles to integers
         if circles is not None:
-            #circles = np.round(circles[0, :]).astype("int")
-            circles = np.uint16(np.around(circles[0,:]))
+            circles = np.round(circles[0, :]).astype("int")
             return circles
-        else:
-            return None   
+        
+        return circles
 
 
 def main(args):
