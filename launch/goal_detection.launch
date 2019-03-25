@@ -1,12 +1,14 @@
 <launch>
 
   <arg name="image" default="middle-280.jpg" />
-  <arg name="flip_horizontal" default="true" />
+  <arg name="flip_horizontal" default="false" />
+  <arg name="flip_vertical" default="false" />
   <arg name="display" default="true"/>
   
   <include file="$(find goal_detection)/launch/fake_camera.launch"> 
     <arg name="video_stream_provider" value="$(find goal_detection)/images/$(arg image)"/>
-    <arg name="flip_horizontal" default="$(arg flip_horizontal)" />
+    <arg name="flip_horizontal" value="$(arg flip_horizontal)" />
+    <arg name="flip_vertical" value="$(arg flip_vertical)" />
   </include>
   
   <include file="$(find goal_detection)/launch/detect.launch">

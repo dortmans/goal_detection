@@ -20,6 +20,7 @@ DARK_RED = (  0,   0,  50)
 max_nr_points = 250
 min_quality = 0
 min_distance = 0
+max_radius = 300
 
 def get_parameter(default, message):
     question = message + ' (' + str(default) + '): '
@@ -52,6 +53,10 @@ def change_min_distance(distance):
     if distance > 0:
         min_distance = distance
 
+def change_max_radius(radius):
+    global max_radius
+    if radius > 0:
+        max_radius = radius
 
 def change_tile_dist(dist):
     global tile_dist
@@ -156,8 +161,9 @@ def fit_calibration(points, centerX, centerY, tile_dist, tile_size):
 
 def find_center(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #gray = cv2.medianBlur(gray,5)
     circles = cv2.HoughCircles(
-        gray, cv2.HOUGH_GRADIENT, 1, 20, param1=50, param2=30, minRadius=10, maxRadius=50)
+        gray, cv2.HOUGH_GRADIENT, 1, 20, param1=50, param2=30, minRadius=100, maxRadius=300)
     return circles[0][0]
 
 
@@ -173,7 +179,7 @@ def show_center(frame, centerX, centerY, centerR):
 
 
 def detect_points(frame, centerX, centerY):
-    global max_nr_points, min_distance, min_quality
+    global max_nr_points, min_distance, min_quality, max_radius
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners = cv2.goodFeaturesToTrack(
         gray, max_nr_points, min_quality / 100.0, min_distance)
@@ -181,7 +187,7 @@ def detect_points(frame, centerX, centerY):
     points = []
     for i in corners:
         x, y = i.ravel()
-        if abs(x - centerX) < min_distance and y > centerY:
+        if abs(x - centerX) < min_distance and y > centerY and (y - centerY) < max_radius:
             points.append((x, y))
             cv2.circle(frame, (x-1, y-1), 3, RED, -1)
         else:
@@ -267,14 +273,17 @@ def main():
             calibrate = not calibrate
             if calibrate:
                 global max_nr_points, min_distance, min_quality
-                min_distance = 7
-                min_quality = 15
-                tile_dist = 25
-                tile_size = 25
+                min_distance = 7 # between corners in pixels
+                max_radius = 300 # pixels
+                min_quality = 15  # no dim
+                tile_dist = 25 # cm
+                tile_size = 25 # cm
                 cv2.createTrackbar('minimum distance (in pixels)', 'calibration frame', 
                     min_distance, 20, change_min_distance)
                 cv2.createTrackbar('quality corner',   'calibration frame',
                     min_quality, 100, change_min_quality)
+                cv2.createTrackbar('maximum radius (in pixels)', 'calibration frame', 
+                    max_radius, 300, change_max_radius)
                 cv2.createTrackbar('closest point (in cm)', 'calibration frame', 
                     tile_dist,  50, change_tile_dist)
                 cv2.createTrackbar('distance between points (in cm)', 'calibration frame', 
@@ -310,6 +319,9 @@ def main():
 
     if camera != None:
         camera.release()
+        
+    cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()

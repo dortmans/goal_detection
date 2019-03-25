@@ -120,22 +120,48 @@ class GoalDetection:
         color_max = np.array([20, 255, 255], np.uint8)  # max HSV color
         blobs = Utils.detect_colored_blobs(hsv, color_min, color_max)  
         #cv2.imshow('blobs', blobs)    
-        #pylons = cv2.bitwise_and(self.image, self.image, mask=blobs)
+        pylons = cv2.bitwise_and(self.image, self.image, mask=blobs)
         #cv2.imshow('pylons', pylons)
         contours = Utils.find_contours(blobs)
-        if len(contours) > 1: # we have seen then pylons
+        if len(contours) > 1: # we have seen pylons
           cnts = Utils.largest_contours(contours, number=2)
           
           # Calculate and draw position of both goal posts (pylons)
-          pylon1 = Utils.center_of_contour(cnts[0])     
-          cv2.circle(display_img, pylon1, 0, (0, 255, 0), 5)
-          pylon2 = Utils.center_of_contour(cnts[1])
-          cv2.circle(display_img, pylon2, 0, (0, 255, 0), 5)
+ 
+          # OPTION1: Center of contour
+          #pylon1 = Utils.center_of_contour(cnts[0])
+          #pylon2 = Utils.center_of_contour(cnts[1])
+     
+          # OPTION2: Closest point on contour
+          def closest_point(point, points):
+            point = np.asarray(point)
+            points = np.asarray(points)
+            dist_2 = np.sum((points - point)**2, axis=1)
+            return np.argmin(dist_2)
+          pylon1_points = cnts[0].ravel().reshape((len(cnts[0]),2))          
+          pylon2_points = cnts[1].ravel().reshape((len(cnts[1]),2)) 
+          pylon1 = pylon1_points[closest_point((self.center_x, self.center_y), pylon1_points)] 
+          pylon2 = pylon2_points[closest_point((self.center_x, self.center_y), pylon2_points)]
+
+          # OPTION3: Center of rotated rectangle          
+          pylon1_rect = cv2.minAreaRect(cnts[0]) # rect = ( (center_x,center_y), (width,height), angle )
+          pylon2_rect = cv2.minAreaRect(cnts[0]) # rect = ( (center_x,center_y), (width,height), angle )
+          pylon_radius = int(round((pylon1_rect[1][0] + pylon2_rect[1][0]) / 4.0))
+          #pylon1_box = np.int0(cv2.boxPoints(pylon1_rect))
+          #cv2.drawContours(display_img,[pylon1_box],0,(0,0,255),1)
+          #pylon2_box = np.int0(cv2.boxPoints(pylon2_rect))
+          #cv2.drawContours(display_img,[pylon2_box],0,(0,0,255),1)
+          #pylon1 = np.int0(pylon1_rect[0])
+          #pylon2 = np.int0(pylon2_rect[0])
+
+          cv2.circle(display_img, tuple(pylon1), 0, (0, 255, 0), 5)
+          cv2.circle(display_img, tuple(pylon2), 0, (0, 255, 0), 5)
+          
           if pylon1[0] > pylon2[0]:
             pylon1, pylon2 = pylon2, pylon1
           
           # Draw goal-line
-          cv2.line(display_img, pylon1, pylon2, (0,255,0), 1)
+          cv2.line(display_img, tuple(pylon1), tuple(pylon2), (0,255,0), 1)
                    
           # Calculate the center of the goal in pixel coordinates                 
           goal = np.round(Utils.middle_between(pylon1, pylon2)).astype("int")
@@ -150,6 +176,7 @@ class GoalDetection:
           goal_relative_x = goal_x - self.center_x
           goal_relative_y = goal_y - self.center_y
           goal_rho, goal_phi = Utils.cart2pol(goal_relative_x, goal_relative_y)
+          goal_rho += pylon_radius # correct for radius of object
           goal_real_phi = goal_phi
           goal_real_rho = Camera.pixels2meters(goal_rho)
           goal_x_cart, goal_y_cart = Utils.pol2cart(goal_real_rho, goal_real_phi)
@@ -158,7 +185,6 @@ class GoalDetection:
           # Calculate goal orientation (theta)            
           goal_normal_relative = Utils.perpendicular((pylon1[0] - pylon2[0], pylon1[1] - pylon2[1]))
           goal_normal = (goal[0] + goal_normal_relative[0], goal[1] + goal_normal_relative[1])
-          cv2.circle(display_img, goal_normal, 0, (0, 255, 0), 5)
           cv2.line(display_img, tuple(goal), tuple(goal_normal), (0,255,0), 1)
           x_axis = (0, -self.center_y)
           self.goal_theta = Utils.angle_between(x_axis, goal_normal_relative)
@@ -224,10 +250,11 @@ class Camera:
         center_x, center_y = width//2, height//2
 
         # try to give better estimate
-        median = cv2.medianBlur(image,5)
-        edges = Utils.find_edges(median)
-        #cv2.imshow("edges", edges)     
-        circles = Utils.find_circles(edges, param2=40, minDist=100, minRadius=180, maxRadius=300)      
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        #gray = cv2.medianBlur(gray,5)
+        #gray = Utils.find_edges(gray)
+        #cv2.imshow("edges", gray)     
+        circles = Utils.find_circles(gray, param2=40, minDist=100, minRadius=180, maxRadius=300)      
         r_max = 0
         if circles is not None:         
           # find biggest circle
@@ -235,9 +262,13 @@ class Camera:
             if r > r_max:
               r_max = r
               center_x, center_y = x, y    
-        
-        Camera.center = np.array([center_x, center_y])
-        #return center_x, center_y
+
+        #display_img = image.copy()
+        #cv2.circle(display_img, (center_x, center_y), r_max, (0, 255, 0), 1)
+        #cv2.circle(display_img, (center_x, center_y), 0, (0, 255, 0), 3)
+        #cv2.imshow("optical_center", display_img)  
+
+        Camera.center = np.array([center_x, center_y])  
 
     @classmethod
     def pixels2meters(cls, rho):
@@ -351,6 +382,11 @@ class Utils:
         moments = cv2.moments(cnt)
         center_x = int(moments["m10"] / moments["m00"])
         center_y = int(moments["m01"] / moments["m00"])
+        if moments["m00"] != 0:
+          center_x = int(moments["m10"] / moments["m00"])
+          center_y = int(moments["m01"] / moments["m00"])
+        else:
+          center_x, center_y = 0, 0        
         
         return center_x, center_y
     
